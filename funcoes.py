@@ -24,12 +24,14 @@ def funcMomentum(data, momentum='simple'):
     data['shift1'] = data['Adj Close'].shift(1)
     data['shift3'] = data['Adj Close'].shift(3)
     data['shift6'] = data['Adj Close'].shift(6)
+    data['returns'] = data['Adj Close'].pct_change()
     data.dropna(axis=0, inplace=True)
     
     ## create returns formula
-    og = ((data['Adj Close']/data['shift1']-1)) + ((data['Adj Close']/data['shift3']-1)) + ((data['Adj Close']/data['shift6']-1).mean())
-    weighted = (12*(data['Adj Close']/data['shift1']-1)) + (4*(data['Adj Close']/data['shift3']-1)) + (2*(data['Adj Close']/data['shift6']-1))
-    simple = ((data['Adj Close']/data['shift6']-1))
+    og = data['Adj Close'].pct_change() + data['Adj Close'].pct_change(3) + data['Adj Close'].pct_change(6)
+    weighted = (12*data['Adj Close'].pct_change()) + (4*data['Adj Close'].pct_change(3)) + (2*data['Adj Close'].pct_change(6))
+    simple = data['Adj Close'].pct_change(6)
+    
     
     ## select returns formula
     if momentum == 'weighted':
@@ -44,7 +46,7 @@ def get60_40(interval='1MO', stocks=['vti','bnd'], momentum='simple'):
     ## Getting Data
     namespace = globals()
 
-    prices = yf.download(stocks, interval=interval)
+    prices = yf.download(stocks, interval=interval, start="2000-01-01", end=today)
     prices = prices['Adj Close']
     prices.dropna(axis=0, inplace=True)
 
@@ -68,7 +70,7 @@ def get60_40(interval='1MO', stocks=['vti','bnd'], momentum='simple'):
     cumulative_rets = list(np.cumsum(ret))
     ret.pop(0)
     cumulative_rets.pop(0)
-    dates = prices.index[:len(ret)]
+    dates = prices.index[-len(ret):]
     ret_data = {'date':dates, 'ret':ret, 'Cumulative Returns':cumulative_rets}
     returns = pd.DataFrame(data=ret_data)
     return returns
@@ -77,7 +79,7 @@ def get60_40(interval='1MO', stocks=['vti','bnd'], momentum='simple'):
 def acceleratingDualMomentum(interval='1MO', stocks=["spy","scz","tip"], momentum='simple'):
     namespace = globals()
 
-    prices = yf.download(stocks, interval=interval)
+    prices = yf.download(stocks, interval=interval, start="2000-01-01", end=today)
     prices = prices['Adj Close']
     prices.dropna(axis=0, inplace=True)
     
@@ -91,27 +93,23 @@ def acceleratingDualMomentum(interval='1MO', stocks=["spy","scz","tip"], momentu
     ## ETF Picking
     etf = []
     ret = [1]
-    close = []
     for i in range(0, len(spy_data)):
         if ((spy_data['momentum'].iloc[i] > scz_data['momentum'].iloc[i]) & (spy_data['momentum'].iloc[i] > 0)):
             etf.append('SPY')
             ret.append((spy_data['Adj Close'].iloc[i] / spy_data['shift1'].iloc[i] - 1))
-            close.append(spy_data['Adj Close'].iloc[i])
         elif ((scz_data['momentum'].iloc[i] > spy_data['momentum'].iloc[i]) & (scz_data['momentum'].iloc[i] > 0)):
             etf.append('SCZ')
             ret.append((scz_data['Adj Close'].iloc[i] / scz_data['shift1'].iloc[i] - 1))
-            close.append(scz_data['Adj Close'].iloc[i])
         else:
             etf.append('TIP')
             ret.append((tip_data['Adj Close'].iloc[i] / tip_data['shift1'].iloc[i] - 1))
-            close.append(tip_data['Adj Close'].iloc[i])
    
     ## Returns   
     cumulative_rets = list(np.cumsum(ret))
     ret.pop(0)
     cumulative_rets.pop(0)
-    dates = prices.index[:len(etf)]
-    ret_data = {'date':dates, 'etf':etf, 'close':close, 'ret':ret, 'Cumulative Returns':cumulative_rets}
+    dates = prices.index[-len(ret):]
+    ret_data = {'date':dates, 'etf':etf, 'ret':ret, 'Cumulative Returns':cumulative_rets}
     returns = pd.DataFrame(data=ret_data)
     return returns
 
@@ -120,6 +118,7 @@ def riskFreeRate():
     interest_rate_source = 'https://fred.stlouisfed.org/data/TB3MS.txt'
     interest_rate = float(pd.read_csv(interest_rate_source, sep=' ', skiprows=11).iloc[-1:]['Unnamed: 3'] / 100 / 3)
     return interest_rate
+
 
 ### functions inspired by https://github.com/enexqnt/RBAA/blob/main/RBAA.ipynb
 def drawdown_DF(x):
@@ -130,6 +129,7 @@ def drawdown_DF(x):
     dd_df['drawdowns'] = (dd_df['wealth_index'] - dd_df['previous_peaks'])/dd_df['previous_peaks']
     dd_df.set_index('Date', inplace=True)
     return dd_df
+
 
 def sortino(hist,per='monthly'):
     if per == 'monthly':
@@ -143,6 +143,7 @@ def sortino(hist,per='monthly'):
     down_stdev = downside_returns.std()*(m**0.5)
     sortino_ratio = (expected_return-riskFreeRate())/down_stdev
     return sortino_ratio
+
 
 def stats(hist,per='monthly'):
     if per == 'monthly':
@@ -162,6 +163,7 @@ def skewness(r):
     Alternative to scipy.stats.skew()
     Computes the skewness of the supplied Series or DataFrame
     Returns a float or a Series
+    POSITIVE SKEWNESS IS GOOD
     """
     demeaned_r = r - r.mean()
     # use the population standard deviation, so set dof=0
@@ -175,6 +177,7 @@ def kurtosis(r):
     Alternative to scipy.stats.kurtosis()
     Computes the kurtosis of the supplied Series or DataFrame
     Returns a float or a Series
+    HIGHER THAN 3 IS CONSIDERED A FAT TAIL DISTRIBUTION
     """
     demeaned_r = r - r.mean()
     # use the population standard deviation, so set dof=0
@@ -316,7 +319,6 @@ def var_gaussian(r, level=5, modified=False):
 
 
 ### NEW FUNCTIONS
-
 def stats2(r, returns_col, per='monthly'):
     if per == 'monthly':
         m = 12
@@ -330,7 +332,10 @@ def stats2(r, returns_col, per='monthly'):
     anual_v = annualize_vol(r[returns_col], m)*100
     sh_ratio = sharpe_ratio(r[returns_col], riskFreeRate(), m)
     pos_per = len(r[returns_col].loc[r[returns_col]>0]) / len(r[returns_col])*100
+    semidev = semideviation(r[returns_col])*100
+    var = var_gaussian(r[returns_col])*100
+    cvar = cvar_historic(r[returns_col])*100
     
-    return [k,s,dd_max,dd_date,anual_r,anual_v,sh_ratio, pos_per]
+    return [k,s,dd_max,dd_date,anual_r,anual_v,sh_ratio,pos_per,semidev,var,cvar]
 # ADD VaR measures
 
