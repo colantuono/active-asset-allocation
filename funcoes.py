@@ -128,6 +128,7 @@ def drawdown_DF(x):
     dd_df['wealth_index'] = 1000*(1+x['ret']).cumprod()
     dd_df['previous_peaks'] = dd_df['wealth_index'].cummax()
     dd_df['drawdowns'] = (dd_df['wealth_index'] - dd_df['previous_peaks'])/dd_df['previous_peaks']
+    dd_df.set_index('Date', inplace=True)
     return dd_df
 
 def sortino(hist,per='monthly'):
@@ -154,7 +155,6 @@ def stats(hist,per='monthly'):
     sh=(cagr-riskFreeRate())/std
     dd=((hist-hist.expanding().max())/hist.expanding().max()).min()[0]
     return [cagr*100,std,sh,dd*100,so]
-
 
 ### EDHEC functions
 def skewness(r):
@@ -314,4 +314,23 @@ def var_gaussian(r, level=5, modified=False):
             )
     return -(r.mean() + z*r.std(ddof=0))
 
+
+### NEW FUNCTIONS
+
+def stats2(r, returns_col, per='monthly'):
+    if per == 'monthly':
+        m = 12
+    elif per == 'weekly':
+        m = 52
+    k = kurtosis(r[returns_col])
+    s = skewness(r[returns_col])
+    dd_max = drawdown_DF(r)['drawdowns'].min()*100
+    dd_date = datetime.strftime(drawdown_DF(r)['drawdowns'].idxmin(), '%Y-%m')
+    anual_r = annualize_rets(r[returns_col], m)*100
+    anual_v = annualize_vol(r[returns_col], m)*100
+    sh_ratio = sharpe_ratio(r[returns_col], riskFreeRate(), m)
+    pos_per = len(r[returns_col].loc[r[returns_col]>0]) / len(r[returns_col])*100
+    
+    return [k,s,dd_max,dd_date,anual_r,anual_v,sh_ratio, pos_per]
+# ADD VaR measures
 
